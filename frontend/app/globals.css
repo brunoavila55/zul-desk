@@ -381,6 +381,11 @@
   }
 }
 .action-modal > label input{height:46px;border:1px solid #dce3df;border-radius:9px;padding:0 12px;outline:0}.action-modal > label input:focus{border-color:var(--green);box-shadow:0 0 0 3px #15a76e15}
+.customer-modal {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
 .webhook-settings {
   background: white;
   border: 1px solid var(--line);

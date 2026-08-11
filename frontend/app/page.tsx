@@ -1327,9 +1327,24 @@ function CustomersView({ onOpenInbox }: { onOpenInbox: () => void }) {
     [accounts, setAccounts] = useState<WhatsAppAccount[]>([]),
     [accountID, setAccountID] = useState(""),
     [modal, setModal] = useState(false),
+    [createModal, setCreateModal] = useState(false),
+    [saving, setSaving] = useState(false),
     [choice, setChoice] = useState(""),
     [preview, setPreview] = useState(""),
+    [message, setMessage] = useState(""),
     [error, setError] = useState("");
+  const emptyCustomer = {
+    external_id: "",
+    name: "",
+    phone: "",
+    document: "",
+    customer_since: "",
+    product: "",
+    city: "",
+    whatsapp_opt_in: false,
+    opt_in_source: "Cadastro manual no Zul Desk",
+  };
+  const [customerForm, setCustomerForm] = useState(emptyCustomer);
   useEffect(() => {
     const t = setTimeout(
       () =>
@@ -1368,6 +1383,29 @@ function CustomersView({ onOpenInbox }: { onOpenInbox: () => void }) {
       setError((e as Error).message);
     }
   }
+  async function createCustomer(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      await api("/customers", {
+        method: "POST",
+        body: JSON.stringify(customerForm),
+      });
+      const result = await api<{ items: Customer[] }>(
+        `/customers?q=${encodeURIComponent(q)}`,
+      );
+      setItems(result.items);
+      setCustomerForm(emptyCustomer);
+      setCreateModal(false);
+      setMessage("Cliente cadastrado com sucesso.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
   function renderTemplate(t: Template, c: Customer) {
     return t.content
       .replace("{{1}}", c.name.split(" ")[0])
@@ -1403,7 +1441,7 @@ function CustomersView({ onOpenInbox }: { onOpenInbox: () => void }) {
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
-        <button className="secondary">
+        <button className="secondary" onClick={() => setCreateModal(true)}>
           <Plus /> Novo cliente
         </button>
       </div>
@@ -1422,6 +1460,11 @@ function CustomersView({ onOpenInbox }: { onOpenInbox: () => void }) {
         </button>
       </div>
       {error && <div className="error banner">{error}</div>}
+      {message && (
+        <div className="success banner">
+          <Check /> {message}
+        </div>
+      )}
       <section className="customer-table">
         <div className="table-head">
           <span>CLIENTE</span>
@@ -1484,6 +1527,155 @@ function CustomersView({ onOpenInbox }: { onOpenInbox: () => void }) {
           />
         )}
       </section>
+      {createModal && (
+        <div className="modal-backdrop">
+          <form className="modal customer-modal" onSubmit={createCustomer}>
+            <div className="modal-head">
+              <div>
+                <span className="eyebrow green">NOVO CLIENTE</span>
+                <h3>Cadastrar cliente</h3>
+              </div>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setCreateModal(false)}
+              >
+                <X />
+              </button>
+            </div>
+            <div className="form-grid">
+              <label className="wide">
+                Nome completo
+                <input
+                  required
+                  autoFocus
+                  value={customerForm.name}
+                  onChange={(e) =>
+                    setCustomerForm({ ...customerForm, name: e.target.value })
+                  }
+                  placeholder="Ex.: João da Silva"
+                />
+              </label>
+              <label>
+                WhatsApp
+                <input
+                  required
+                  inputMode="tel"
+                  value={customerForm.phone}
+                  onChange={(e) =>
+                    setCustomerForm({ ...customerForm, phone: e.target.value })
+                  }
+                  placeholder="Ex.: 55 11 99999-9999"
+                />
+              </label>
+              <label>
+                Código do cliente
+                <input
+                  value={customerForm.external_id}
+                  onChange={(e) =>
+                    setCustomerForm({
+                      ...customerForm,
+                      external_id: e.target.value,
+                    })
+                  }
+                  placeholder="Código no ERP (opcional)"
+                />
+              </label>
+              <label>
+                CPF/CNPJ
+                <input
+                  value={customerForm.document}
+                  onChange={(e) =>
+                    setCustomerForm({
+                      ...customerForm,
+                      document: e.target.value,
+                    })
+                  }
+                  placeholder="Opcional"
+                />
+              </label>
+              <label>
+                Cliente desde
+                <input
+                  type="date"
+                  value={customerForm.customer_since}
+                  onChange={(e) =>
+                    setCustomerForm({
+                      ...customerForm,
+                      customer_since: e.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Plano ou produto
+                <input
+                  value={customerForm.product}
+                  onChange={(e) =>
+                    setCustomerForm({
+                      ...customerForm,
+                      product: e.target.value,
+                    })
+                  }
+                  placeholder="Ex.: Fibra 500 Mbps"
+                />
+              </label>
+              <label>
+                Cidade
+                <input
+                  value={customerForm.city}
+                  onChange={(e) =>
+                    setCustomerForm({ ...customerForm, city: e.target.value })
+                  }
+                  placeholder="Ex.: São Gabriel"
+                />
+              </label>
+              <label className="check-label wide">
+                <input
+                  type="checkbox"
+                  checked={customerForm.whatsapp_opt_in}
+                  onChange={(e) =>
+                    setCustomerForm({
+                      ...customerForm,
+                      whatsapp_opt_in: e.target.checked,
+                    })
+                  }
+                />
+                <span>
+                  <b>Cliente autorizou contato pelo WhatsApp</b>
+                  <small>
+                    Marque somente quando houver consentimento registrado.
+                  </small>
+                </span>
+              </label>
+              {customerForm.whatsapp_opt_in && (
+                <label className="wide">
+                  Origem da autorização
+                  <input
+                    required
+                    value={customerForm.opt_in_source}
+                    onChange={(e) =>
+                      setCustomerForm({
+                        ...customerForm,
+                        opt_in_source: e.target.value,
+                      })
+                    }
+                    placeholder="Ex.: Contrato, ligação ou formulário"
+                  />
+                </label>
+              )}
+            </div>
+            <div className="modal-foot">
+              <span>
+                <ShieldCheck /> Consentimento e origem ficam registrados
+              </span>
+              <button className="primary" disabled={saving}>
+                <Plus /> {saving ? "Cadastrando…" : "Cadastrar cliente"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       {modal && selected && (
         <div className="modal-backdrop">
           <div className="modal">

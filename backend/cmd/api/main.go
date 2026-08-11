@@ -390,11 +390,22 @@ func (a *app) createCustomer(w http.ResponseWriter, r *http.Request) {
 		OptInSource   string `json:"opt_in_source"`
 		WhatsAppOptIn bool   `json:"whatsapp_opt_in"`
 	}
-	if decode(r, &in) != nil || in.Name == "" || in.Phone == "" {
+	if decode(r, &in) != nil || strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.Phone) == "" {
 		fail(w, 400, "nome e telefone são obrigatórios")
 		return
 	}
+	in.Name = strings.TrimSpace(in.Name)
 	phone := digits(in.Phone)
+	if len(phone) == 10 || len(phone) == 11 {
+		phone = "55" + phone
+	}
+	if len(phone) < 10 || len(phone) > 15 {
+		fail(w, 400, "telefone deve conter DDI, DDD e número válido")
+		return
+	}
+	if in.WhatsAppOptIn && strings.TrimSpace(in.OptInSource) == "" {
+		in.OptInSource = "Cadastro manual no Zul Desk"
+	}
 	var id string
 	e := a.db.QueryRow(r.Context(), `INSERT INTO customers(external_id,name,phone,document,customer_since,product,city,whatsapp_opt_in,opt_in_date,opt_in_source) VALUES(NULLIF($1,''),$2,$3,NULLIF($4,''),NULLIF($5,'')::date,NULLIF($6,''),NULLIF($7,''),$8,CASE WHEN $8 THEN now() END,NULLIF($9,'')) RETURNING id`, in.ExternalID, in.Name, phone, in.Document, in.CustomerSince, in.Product, in.City, in.WhatsAppOptIn, in.OptInSource).Scan(&id)
 	if e != nil {

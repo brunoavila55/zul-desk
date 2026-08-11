@@ -92,6 +92,10 @@ func main() {
 		os.Exit(1)
 	}
 	a := &app{cfg: cfg, db: db, queue: asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr}), log: log, hub: newHub(), vault: secure.NewVault(cfg.CredentialEncryptionKey), wa: whatsapp.New(cfg)}
+	if err := a.ensureMetaSettingsSchema(ctx); err != nil {
+		log.Error("whatsapp_settings_schema_failed", "error", err)
+		os.Exit(1)
+	}
 	defer a.queue.Close()
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer, middleware.Timeout(30*time.Second), middleware.Logger)
@@ -141,6 +145,8 @@ func main() {
 		r.Post("/api/whatsapp/accounts/{id}/test", a.testWhatsAppAccount)
 		r.Post("/api/whatsapp/accounts/{id}/sync-phones", a.syncWhatsAppPhones)
 		r.Post("/api/whatsapp/accounts/{id}/sync-templates", a.syncWhatsAppTemplates)
+		r.Get("/api/settings/whatsapp", a.getWhatsAppSettings)
+		r.Patch("/api/settings/whatsapp", a.updateWhatsAppSettings)
 		r.Patch("/api/settings/branding", a.updateBranding)
 	})
 	h := cors.New(cors.Options{AllowedOrigins: []string{cfg.CORSOrigin}, AllowedMethods: []string{"GET", "POST", "PATCH", "OPTIONS"}, AllowedHeaders: []string{"Authorization", "Content-Type"}, AllowCredentials: true}).Handler(r)
@@ -741,7 +747,8 @@ func (a *app) ws(w http.ResponseWriter, r *http.Request) {
 }
 func (a *app) verifyWebhook(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	if q.Get("hub.mode") == "subscribe" && q.Get("hub.verify_token") == a.cfg.WhatsAppVerifyToken {
+	verifyToken, _ := a.metaSecrets(r.Context())
+	if q.Get("hub.mode") == "subscribe" && q.Get("hub.verify_token") == verifyToken {
 		w.WriteHeader(200)
 		_, _ = w.Write([]byte(q.Get("hub.challenge")))
 		return
@@ -754,9 +761,10 @@ func (a *app) receiveWebhook(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "payload inválido")
 		return
 	}
-	if a.cfg.WhatsAppAppSecret != "" {
+	_, appSecret := a.metaSecrets(r.Context())
+	if appSecret != "" {
 		provided := strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
-		mac := hmac.New(sha256.New, []byte(a.cfg.WhatsAppAppSecret))
+		mac := hmac.New(sha256.New, []byte(appSecret))
 		_, _ = mac.Write(body)
 		expected := hex.EncodeToString(mac.Sum(nil))
 		if !hmac.Equal([]byte(provided), []byte(expected)) {

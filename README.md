@@ -13,6 +13,7 @@ Central de atendimento multiusuário para WhatsApp Business, construída para eq
 - Perfis de Administrador, Supervisor e Usuário.
 - Grupos configuráveis, como Vendas, Financeiro e Suporte.
 - Cadastro de múltiplos números e contas WABA.
+- Configuração do webhook, App Secret, token de verificação e credenciais pela interface.
 - Templates aprovados pela Meta e controle da janela de 24 horas.
 - Cadastro e importação de clientes, opt-in, opt-out, notas e histórico.
 - Personalização white label de nome, empresa, logotipo e favicon.
@@ -111,7 +112,7 @@ CREDENTIAL_ENCRYPTION_KEY=gere-outro-segredo-forte
 WHATSAPP_MOCK=false
 ```
 
-As credenciais de cada número podem ser cadastradas em **Configurações > Números WhatsApp**. O token é criptografado com AES-256-GCM e nunca é devolvido pela API ou enviado ao navegador.
+As credenciais de cada número e do webhook podem ser cadastradas em **Configurações > Números WhatsApp**. Tokens e o App Secret são criptografados com AES-256-GCM. O Access Token e o App Secret nunca são devolvidos pela API ou enviados novamente ao navegador.
 
 ## Meta WhatsApp Cloud API
 

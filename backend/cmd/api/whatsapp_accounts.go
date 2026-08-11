@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/brunoavila55/zul-desk/internal/whatsapp"
+	"github.com/go-chi/chi/v5"
 )
 
 func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
@@ -74,11 +74,14 @@ func (a *app) updateWhatsAppAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	id := chi.URLParam(r, "id")
 	var in struct {
-		Name        string `json:"name"`
-		AccessToken string `json:"access_token"`
-		Active      *bool  `json:"active"`
-		Coexistence *bool  `json:"coexistence"`
-		APIVersion  string `json:"api_version"`
+		Name               string `json:"name"`
+		WABAID             string `json:"business_account_id"`
+		PhoneNumberID      string `json:"phone_number_id"`
+		DisplayPhoneNumber string `json:"display_phone_number"`
+		AccessToken        string `json:"access_token"`
+		Active             *bool  `json:"active"`
+		Coexistence        *bool  `json:"coexistence"`
+		APIVersion         string `json:"api_version"`
 	}
 	if decode(r, &in) != nil {
 		fail(w, 400, "dados inválidos")
@@ -93,7 +96,15 @@ func (a *app) updateWhatsAppAccount(w http.ResponseWriter, r *http.Request) {
 		}
 		encrypted = &value
 	}
-	tag, err := a.db.Exec(r.Context(), `UPDATE whatsapp_accounts SET name=COALESCE(NULLIF($2,''),name),access_token_encrypted=COALESCE($3,access_token_encrypted),active=COALESCE($4,active),coexistence=COALESCE($5,coexistence),onboarding_type=CASE WHEN COALESCE($5,coexistence) THEN 'COEXISTENCE' ELSE onboarding_type END,api_version=COALESCE(NULLIF($6,''),api_version),updated_at=now() WHERE id=$1`, id, in.Name, encrypted, in.Active, in.Coexistence, in.APIVersion)
+	tag, err := a.db.Exec(r.Context(), `UPDATE whatsapp_accounts SET
+		name=COALESCE(NULLIF($2,''),name),
+		business_account_id=COALESCE(NULLIF($3,''),business_account_id),
+		phone_number_id=COALESCE(NULLIF($4,''),phone_number_id),
+		display_phone_number=COALESCE(NULLIF($5,''),display_phone_number),
+		access_token_encrypted=COALESCE($6,access_token_encrypted),
+		active=COALESCE($7,active),coexistence=COALESCE($8,coexistence),
+		onboarding_type=CASE WHEN COALESCE($8,coexistence) THEN 'COEXISTENCE' ELSE 'CLOUD_API' END,
+		api_version=COALESCE(NULLIF($9,''),api_version),updated_at=now() WHERE id=$1`, id, in.Name, in.WABAID, in.PhoneNumberID, in.DisplayPhoneNumber, encrypted, in.Active, in.Coexistence, in.APIVersion)
 	if err != nil || tag.RowsAffected() == 0 {
 		fail(w, 404, "número não encontrado")
 		return

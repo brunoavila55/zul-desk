@@ -118,10 +118,16 @@ type WhatsAppAccount = {
   quality_rating?: string;
   platform_status?: string;
   onboarding_type: string;
+  api_version: string;
   coexistence: boolean;
   active: boolean;
   has_token: boolean;
   last_verified_at?: string;
+};
+type MetaSettings = {
+  callback_url: string;
+  verify_token: string;
+  app_secret_configured: boolean;
 };
 type Dashboard = {
   summary: Record<string, number>;
@@ -2031,7 +2037,13 @@ function WhatsAppAccountsView() {
   const [items, setItems] = useState<WhatsAppAccount[]>([]),
     [modal, setModal] = useState(false),
     [tokenAccount, setTokenAccount] = useState<WhatsAppAccount | null>(null),
+    [editingAccount, setEditingAccount] = useState<WhatsAppAccount | null>(
+      null,
+    ),
     [tokenValue, setTokenValue] = useState(""),
+    [meta, setMeta] = useState<MetaSettings | null>(null),
+    [verifyToken, setVerifyToken] = useState(""),
+    [appSecret, setAppSecret] = useState(""),
     [busy, setBusy] = useState(""),
     [message, setMessage] = useState(""),
     [error, setError] = useState("");
@@ -2044,13 +2056,28 @@ function WhatsAppAccountsView() {
     api_version: "v23.0",
     coexistence: false,
   });
-  const load = useCallback(
-    () =>
-      api<{ items: WhatsAppAccount[] }>("/whatsapp/accounts")
-        .then((x) => setItems(x.items))
-        .catch((e) => setError(e.message)),
-    [],
-  );
+  const [editForm, setEditForm] = useState({
+    name: "",
+    business_account_id: "",
+    phone_number_id: "",
+    display_phone_number: "",
+    api_version: "v23.0",
+    coexistence: false,
+    active: true,
+  });
+  const load = useCallback(async () => {
+    try {
+      const [accounts, settings] = await Promise.all([
+        api<{ items: WhatsAppAccount[] }>("/whatsapp/accounts"),
+        api<MetaSettings>("/settings/whatsapp"),
+      ]);
+      setItems(accounts.items);
+      setMeta(settings);
+      setVerifyToken(settings.verify_token);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, []);
   useEffect(() => {
     void load();
   }, [load]);
@@ -2127,6 +2154,76 @@ function WhatsAppAccountsView() {
       setBusy("");
     }
   }
+  async function saveWebhook(e: FormEvent) {
+    e.preventDefault();
+    setBusy("webhook");
+    setError("");
+    try {
+      const settings = await api<MetaSettings>("/settings/whatsapp", {
+        method: "PATCH",
+        body: JSON.stringify({
+          verify_token: verifyToken.trim(),
+          app_secret: appSecret.trim(),
+        }),
+      });
+      setMeta(settings);
+      setVerifyToken(settings.verify_token);
+      setAppSecret("");
+      setMessage("Configuração do webhook salva com segurança.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+  async function regenerateVerifyToken() {
+    setBusy("regenerate");
+    setError("");
+    try {
+      const settings = await api<MetaSettings>("/settings/whatsapp", {
+        method: "PATCH",
+        body: JSON.stringify({ regenerate_verify_token: true }),
+      });
+      setMeta(settings);
+      setVerifyToken(settings.verify_token);
+      setMessage("Novo token gerado. Atualize-o também no painel da Meta.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+  function openEdit(account: WhatsAppAccount) {
+    setEditingAccount(account);
+    setEditForm({
+      name: account.name,
+      business_account_id: account.business_account_id,
+      phone_number_id: account.phone_number_id,
+      display_phone_number: account.display_phone_number || "",
+      api_version: account.api_version || "v23.0",
+      coexistence: account.coexistence,
+      active: account.active,
+    });
+  }
+  async function saveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editingAccount) return;
+    setBusy("edit");
+    setError("");
+    try {
+      await api(`/whatsapp/accounts/${editingAccount.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(editForm),
+      });
+      setEditingAccount(null);
+      await load();
+      setMessage("Configurações do número atualizadas.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
   return (
     <>
       <div className="accounts-intro">
@@ -2149,6 +2246,77 @@ function WhatsAppAccountsView() {
           {message}
         </div>
       )}
+      <form className="webhook-settings" onSubmit={saveWebhook}>
+        <div className="webhook-heading">
+          <span className="phone-icon">
+            <Wifi />
+          </span>
+          <div>
+            <h3>Webhook da Meta</h3>
+            <p>Configure por aqui os dados usados para receber mensagens.</p>
+          </div>
+          <span
+            className={`status ${meta?.app_secret_configured ? "approved" : ""}`}
+          >
+            {meta?.app_secret_configured ? "Protegido" : "App Secret pendente"}
+          </span>
+        </div>
+        <div className="webhook-fields">
+          <label className="wide">
+            URL de callback
+            <div className="copy-field">
+              <input readOnly value={meta?.callback_url || "Carregando…"} />
+              <button
+                type="button"
+                className="outline"
+                onClick={() =>
+                  navigator.clipboard.writeText(meta?.callback_url || "")
+                }
+              >
+                Copiar
+              </button>
+            </div>
+          </label>
+          <label>
+            Token de verificação
+            <input
+              required
+              value={verifyToken}
+              onChange={(e) => setVerifyToken(e.target.value)}
+            />
+          </label>
+          <label>
+            App Secret
+            <input
+              type="password"
+              autoComplete="off"
+              placeholder={
+                meta?.app_secret_configured
+                  ? "Já configurado — preencha somente para trocar"
+                  : "Cole o App Secret da Meta"
+              }
+              value={appSecret}
+              onChange={(e) => setAppSecret(e.target.value)}
+            />
+          </label>
+        </div>
+        <div className="webhook-actions">
+          <span>
+            <ShieldCheck /> O App Secret nunca volta para o navegador.
+          </span>
+          <button
+            type="button"
+            className="outline"
+            disabled={busy !== ""}
+            onClick={regenerateVerifyToken}
+          >
+            <RefreshCw /> Gerar token
+          </button>
+          <button className="primary" disabled={busy !== ""}>
+            <Check /> {busy === "webhook" ? "Salvando…" : "Salvar webhook"}
+          </button>
+        </div>
+      </form>
       <div className="account-grid">
         {items.map((a) => (
           <article className="account-card" key={a.id}>
@@ -2221,6 +2389,13 @@ function WhatsAppAccountsView() {
                 disabled={busy !== ""}
               >
                 <LockKeyhole /> Atualizar token
+              </button>
+              <button
+                className="outline"
+                onClick={() => openEdit(a)}
+                disabled={busy !== ""}
+              >
+                <Settings /> Editar
               </button>
             </div>
           </article>
@@ -2384,6 +2559,123 @@ function WhatsAppAccountsView() {
               <button className="primary" disabled={busy === "token"}>
                 <Check />
                 {busy === "token" ? "Atualizando…" : "Salvar novo token"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {editingAccount && (
+        <div className="modal-backdrop">
+          <form className="modal account-modal" onSubmit={saveEdit}>
+            <div className="modal-head">
+              <div>
+                <span className="eyebrow green">CONFIGURAR NÚMERO</span>
+                <h3>{editingAccount.name}</h3>
+              </div>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setEditingAccount(null)}
+              >
+                <X />
+              </button>
+            </div>
+            <div className="form-grid">
+              <label>
+                Nome interno
+                <input
+                  required
+                  value={editForm.name}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, name: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Número exibido
+                <input
+                  value={editForm.display_phone_number}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      display_phone_number: e.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                WhatsApp Business Account ID
+                <input
+                  required
+                  value={editForm.business_account_id}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      business_account_id: e.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Phone Number ID
+                <input
+                  required
+                  value={editForm.phone_number_id}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      phone_number_id: e.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Versão da Graph API
+                <input
+                  required
+                  value={editForm.api_version}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, api_version: e.target.value })
+                  }
+                />
+              </label>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={editForm.active}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, active: e.target.checked })
+                  }
+                />
+                <span>
+                  <b>Número ativo</b>
+                  <small>Disponível para novos atendimentos.</small>
+                </span>
+              </label>
+              <label className="check-label wide">
+                <input
+                  type="checkbox"
+                  checked={editForm.coexistence}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, coexistence: e.target.checked })
+                  }
+                />
+                <span>
+                  <b>Usar coexistência</b>
+                  <small>
+                    Mantenha marcado somente após o onboarding de coexistência
+                    da Meta.
+                  </small>
+                </span>
+              </label>
+            </div>
+            <div className="modal-foot">
+              <span>
+                <ShieldCheck /> Identificadores e status gerenciados pela
+                interface
+              </span>
+              <button className="primary" disabled={busy === "edit"}>
+                <Check /> {busy === "edit" ? "Salvando…" : "Salvar alterações"}
               </button>
             </div>
           </form>

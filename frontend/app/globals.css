@@ -381,3 +381,104 @@
   }
 }
 .action-modal > label input{height:46px;border:1px solid #dce3df;border-radius:9px;padding:0 12px;outline:0}.action-modal > label input:focus{border-color:var(--green);box-shadow:0 0 0 3px #15a76e15}
+.webhook-settings {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  padding: 18px;
+  margin-bottom: 14px;
+}
+.webhook-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 15px;
+}
+.webhook-heading > div {
+  flex: 1;
+}
+.webhook-heading h3 {
+  font: 800 14px "Manrope";
+  margin: 0;
+}
+.webhook-heading p {
+  font-size: 10px;
+  color: var(--muted);
+  margin: 3px 0 0;
+}
+.webhook-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.webhook-fields .wide {
+  grid-column: 1/-1;
+}
+.webhook-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #59655f;
+}
+.webhook-fields input {
+  height: 42px;
+  border: 1px solid #dce3df;
+  border-radius: 9px;
+  padding: 0 11px;
+  outline: 0;
+}
+.webhook-fields input:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px #15a76e15;
+}
+.copy-field {
+  display: flex;
+  gap: 7px;
+}
+.copy-field input {
+  flex: 1;
+  min-width: 0;
+  font-family: monospace;
+  background: #f8faf9;
+}
+.copy-field button {
+  min-height: 42px;
+}
+.webhook-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  margin-top: 15px;
+  padding-top: 14px;
+}
+.webhook-actions > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 9px;
+}
+.webhook-actions > span svg {
+  width: 14px;
+  color: var(--green);
+}
+@media (max-width: 700px) {
+  .webhook-fields {
+    grid-template-columns: 1fr;
+  }
+  .webhook-fields .wide {
+    grid-column: auto;
+  }
+  .webhook-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .webhook-actions > span {
+    margin: 0 0 4px;
+  }
+}

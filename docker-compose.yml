@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: commercial
+      POSTGRES_PASSWORD: commercial
+      POSTGRES_DB: commercial
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commercial"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/database/migrations:/docker-entrypoint-initdb.d:ro
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    volumes:
+      - branding_data:/app/data/uploads
+      - media_data:/app/data/media
+
+  worker:
+    build: ./backend
+    command: ["/app/worker"]
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    volumes:
+      - media_data:/app/data/media
+
+  frontend:
+    build: ./frontend
+    environment:
+      NEXT_PUBLIC_API_URL: /api
+    depends_on: [backend]
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on: [frontend, backend]
+
+volumes:
+  postgres_data:
+  branding_data:
+  media_data:

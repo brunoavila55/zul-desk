@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/brunoavila55/zul-desk/internal/config"
+	"github.com/google/uuid"
 )
 
 type Credentials struct {
@@ -64,15 +64,22 @@ func (c *Client) SendText(ctx context.Context, credentials Credentials, phone, b
 	return c.sendMessage(ctx, credentials, payload)
 }
 
-func (c *Client) SendTemplate(ctx context.Context, credentials Credentials, phone, name string, params []string) (string, error) {
+func (c *Client) SendTemplate(ctx context.Context, credentials Credentials, phone, name, language string, params []string) (string, error) {
 	if credentials.Mock || c.cfg.WhatsAppMock && credentials.AccessToken == "" {
 		return "mock-" + uuid.NewString(), nil
+	}
+	if language == "" {
+		language = "pt_BR"
 	}
 	values := make([]any, 0, len(params))
 	for _, v := range params {
 		values = append(values, map[string]any{"type": "text", "text": v})
 	}
-	payload := map[string]any{"messaging_product": "whatsapp", "to": phone, "type": "template", "template": map[string]any{"name": name, "language": map[string]any{"code": "pt_BR"}, "components": []any{map[string]any{"type": "body", "parameters": values}}}}
+	template := map[string]any{"name": name, "language": map[string]any{"code": language}}
+	if len(values) > 0 {
+		template["components"] = []any{map[string]any{"type": "body", "parameters": values}}
+	}
+	payload := map[string]any{"messaging_product": "whatsapp", "to": phone, "type": "template", "template": template}
 	return c.sendMessage(ctx, credentials, payload)
 }
 

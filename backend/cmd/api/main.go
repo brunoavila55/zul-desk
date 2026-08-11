@@ -13,11 +13,16 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/brunoavila55/zul-desk/internal/config"
+	"github.com/brunoavila55/zul-desk/internal/jobs"
+	"github.com/brunoavila55/zul-desk/internal/secure"
+	"github.com/brunoavila55/zul-desk/internal/whatsapp"
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -26,10 +31,6 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/brunoavila55/zul-desk/internal/config"
-	"github.com/brunoavila55/zul-desk/internal/jobs"
-	"github.com/brunoavila55/zul-desk/internal/secure"
-	"github.com/brunoavila55/zul-desk/internal/whatsapp"
 	"github.com/rs/cors"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -127,6 +128,7 @@ func main() {
 		r.Get("/api/templates", a.listTemplates)
 		r.Post("/api/templates/sync", a.syncTemplates)
 		r.Get("/api/dashboard", a.dashboard)
+		r.Get("/api/reports", a.reports)
 		r.Get("/api/users", a.listUsers)
 		r.Post("/api/users", a.createUser)
 		r.Patch("/api/users/{id}", a.updateUser)
@@ -423,6 +425,20 @@ func digits(s string) string {
 	}
 	return b.String()
 }
+
+var templateParameterPattern = regexp.MustCompile(`\{\{(\d+)\}\}`)
+
+func templateParameterCount(content string) int {
+	max := 0
+	for _, match := range templateParameterPattern.FindAllStringSubmatch(content, -1) {
+		value, _ := strconv.Atoi(match[1])
+		if value > max {
+			max = value
+		}
+	}
+	return max
+}
+
 func (a *app) optOut(w http.ResponseWriter, r *http.Request) {
 	u := ident(r)
 	var in struct{ Reason string }
@@ -496,9 +512,15 @@ func (a *app) startConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var approved bool
-	e = tx.QueryRow(r.Context(), "SELECT status='APPROVED' FROM templates WHERE name=$1 AND (whatsapp_account_id=$2 OR whatsapp_account_id IS NULL)", in.TemplateName, in.WhatsAppAccountID).Scan(&approved)
+	var templateLanguage, templateContent string
+	e = tx.QueryRow(r.Context(), "SELECT status='APPROVED',language,content FROM templates WHERE name=$1 AND (whatsapp_account_id=$2 OR whatsapp_account_id IS NULL)", in.TemplateName, in.WhatsAppAccountID).Scan(&approved, &templateLanguage, &templateContent)
 	if e != nil || !approved {
 		fail(w, 422, "template não aprovado")
+		return
+	}
+	parameterCount := templateParameterCount(templateContent)
+	if parameterCount > 3 {
+		fail(w, 422, "este template exige mais variáveis do que o fluxo atual suporta")
 		return
 	}
 	var cid, mid string
@@ -530,7 +552,8 @@ func (a *app) startConversation(w http.ResponseWriter, r *http.Request) {
 	if customerSince != nil {
 		tenure = fmt.Sprintf("%d anos", time.Now().Year()-customerSince.Year())
 	}
-	task, _ := jobs.NewSendMessage(jobs.SendMessagePayload{MessageID: mid, ConversationID: cid, WhatsAppAccountID: in.WhatsAppAccountID, Phone: phone, Body: in.Body, Template: in.TemplateName, TemplateParams: []string{firstName, u.Name, tenure}})
+	templateParams := []string{firstName, u.Name, tenure}[:parameterCount]
+	task, _ := jobs.NewSendMessage(jobs.SendMessagePayload{MessageID: mid, ConversationID: cid, WhatsAppAccountID: in.WhatsAppAccountID, Phone: phone, Body: in.Body, Template: in.TemplateName, TemplateLanguage: templateLanguage, TemplateParams: templateParams})
 	_, e = a.queue.Enqueue(task, asynq.Queue("critical"))
 	if e != nil {
 		_, _ = a.db.Exec(r.Context(), "UPDATE messages SET status='FAILED',error_message=$2 WHERE id=$1", mid, "fila indisponível")

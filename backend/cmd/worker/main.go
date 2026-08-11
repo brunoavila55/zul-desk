@@ -7,12 +7,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/hibiken/asynq"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/brunoavila55/zul-desk/internal/config"
 	"github.com/brunoavila55/zul-desk/internal/jobs"
 	"github.com/brunoavila55/zul-desk/internal/secure"
 	"github.com/brunoavila55/zul-desk/internal/whatsapp"
+	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -57,7 +57,7 @@ func main() {
 				}
 			}
 		} else if p.Template != "" {
-			wid, err = wa.SendTemplate(ctx, credentials, p.Phone, p.Template, p.TemplateParams)
+			wid, err = wa.SendTemplate(ctx, credentials, p.Phone, p.Template, p.TemplateLanguage, p.TemplateParams)
 		} else {
 			wid, err = wa.SendText(ctx, credentials, p.Phone, p.Body)
 		}

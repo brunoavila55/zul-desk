@@ -1,12 +1,13 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: commercial
-      POSTGRES_PASSWORD: commercial
-      POSTGRES_DB: commercial
+      POSTGRES_USER: ${POSTGRES_USER:-commercial}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-commercial}
+      POSTGRES_DB: ${POSTGRES_DB:-commercial}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U commercial"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -16,14 +17,20 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
+    volumes:
+      - redis_data:/data
 
   backend:
     build: ./backend
+    restart: unless-stopped
+    init: true
     env_file: .env
     depends_on:
       postgres: { condition: service_healthy }
@@ -31,9 +38,17 @@ services:
     volumes:
       - branding_data:/app/data/uploads
       - media_data:/app/data/media
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   worker:
     build: ./backend
+    restart: unless-stopped
+    init: true
     command: ["/app/worker"]
     env_file: .env
     depends_on:
@@ -44,19 +59,40 @@ services:
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
+    init: true
     environment:
       NEXT_PUBLIC_API_URL: /api
-    depends_on: [backend]
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      backend: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   caddy:
     image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-:80}
     ports:
-      - "3000:80"
+      - "${HTTP_PORT:-3000}:80"
+      - "${HTTPS_PORT:-3443}:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-    depends_on: [frontend, backend]
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend: { condition: service_healthy }
+      backend: { condition: service_healthy }
 
 volumes:
   postgres_data:
+  redis_data:
   branding_data:
   media_data:
+  caddy_data:
+  caddy_config:

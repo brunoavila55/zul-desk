@@ -127,6 +127,21 @@ type Dashboard = {
   summary: Record<string, number>;
   agents: { id: string; name: string; contacts: number; sales: number }[];
 };
+type ReportData = {
+  days: number;
+  summary: Record<string, number>;
+  daily: { day: string; started: number; closed: number; sales: number }[];
+  agents: {
+    id: string;
+    name: string;
+    contacts: number;
+    closed: number;
+    sales: number;
+    open_now: number;
+    conversion_rate: number;
+  }[];
+  results: { result: string; total: number }[];
+};
 type TeamUser = {
   id: string;
   name: string;
@@ -403,7 +418,13 @@ function App({
           {user.Role !== "AGENT" && (
             <>
               <small>GESTÃO</small>
-              <button>
+              <button
+                className={view === "reports" ? "active" : ""}
+                onClick={() => {
+                  setView("reports");
+                  setMobileNav(false);
+                }}
+              >
                 <BarChart3 size={19} />
                 <span>Relatórios</span>
               </button>
@@ -439,7 +460,10 @@ function App({
             <Menu />
           </button>
           <div>
-            <h2>{nav.find((n) => n.id === view)?.label || "Configurações"}</h2>
+            <h2>
+              {nav.find((n) => n.id === view)?.label ||
+                (view === "reports" ? "Relatórios" : "Configurações")}
+            </h2>
             <p>
               {view === "inbox"
                 ? "Acompanhe e responda seus atendimentos"
@@ -447,7 +471,9 @@ function App({
                   ? "Encontre e conheça sua base de clientes"
                   : view === "dashboard"
                     ? "Seu desempenho comercial hoje"
-                    : "Gerencie integrações, equipe e identidade do aplicativo"}
+                    : view === "reports"
+                      ? "Analise volume, conversão e desempenho da equipe"
+                      : "Gerencie integrações, equipe e identidade do aplicativo"}
             </p>
           </div>
           <div className={`connection ${connected ? "ok" : ""}`}>
@@ -460,7 +486,10 @@ function App({
           {view === "customers" && (
             <CustomersView onOpenInbox={() => setView("inbox")} />
           )}{" "}
-          {view === "dashboard" && <DashboardView />}{" "}
+          {view === "dashboard" && (
+            <DashboardView onReports={() => setView("reports")} />
+          )}{" "}
+          {view === "reports" && <ReportsView />}{" "}
           {view === "settings" && (
             <SettingsView
               user={user}
@@ -1508,7 +1537,7 @@ function CustomersView({ onOpenInbox }: { onOpenInbox: () => void }) {
   );
 }
 
-function DashboardView() {
+function DashboardView({ onReports }: { onReports: () => void }) {
   const [data, setData] = useState<Dashboard | null>(null);
   useEffect(() => {
     api<Dashboard>("/dashboard").then(setData);
@@ -1560,7 +1589,9 @@ function DashboardView() {
             <h3>Desempenho da equipe</h3>
             <p>Resultados de hoje por vendedor</p>
           </div>
-          <button className="outline">Ver relatório completo</button>
+          <button className="outline" onClick={onReports}>
+            Ver relatório completo
+          </button>
         </div>
         {data?.agents.map((a, i) => (
           <div className="agent-row" key={a.id}>
@@ -1584,6 +1615,283 @@ function DashboardView() {
     </>
   );
 }
+
+function ReportsView() {
+  const [days, setDays] = useState(30);
+  const [data, setData] = useState<ReportData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setLoading(true);
+    setError("");
+    api<ReportData>(`/reports?days=${days}`)
+      .then(setData)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [days]);
+
+  const summary = data?.summary || {};
+  const cards = [
+    ["Conversas iniciadas", summary.conversations_started || 0, "No período"],
+    [
+      "Atendimentos encerrados",
+      summary.conversations_closed || 0,
+      "No período",
+    ],
+    ["Vendas realizadas", summary.sales || 0, "Resultado venda"],
+    [
+      "Taxa de conversão",
+      `${Number(summary.conversion_rate || 0)}%`,
+      "Sobre encerrados",
+    ],
+    [
+      "Tempo médio",
+      `${Number(summary.average_service_minutes || 0)} min`,
+      "Início ao encerramento",
+    ],
+    ["Em atendimento", summary.open_conversations || 0, "Neste momento"],
+  ];
+  const dailyMax = Math.max(
+    1,
+    ...(data?.daily.flatMap((item) => [
+      Number(item.started),
+      Number(item.closed),
+      Number(item.sales),
+    ]) || [1]),
+  );
+  const resultLabels: Record<string, string> = {
+    SALE: "Venda",
+    INTERESTED: "Cliente interessado",
+    CALLBACK: "Retornar depois",
+    NO_INTEREST: "Sem interesse",
+    NO_RESPONSE: "Sem resposta",
+    INVALID_NUMBER: "Número inválido",
+    OTHER: "Outro",
+  };
+
+  const exportCSV = () => {
+    if (!data) return;
+    const rows = [
+      [
+        "Atendente",
+        "Contatos",
+        "Encerrados",
+        "Vendas",
+        "Conversão",
+        "Em andamento",
+      ],
+      ...data.agents.map((agent) => [
+        agent.name,
+        agent.contacts,
+        agent.closed,
+        agent.sales,
+        `${agent.conversion_rate}%`,
+        agent.open_now,
+      ]),
+    ];
+    const csv = rows
+      .map((row) =>
+        row
+          .map((value) => `"${String(value).replaceAll('"', '""')}"`)
+          .join(";"),
+      )
+      .join("\n");
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(
+      new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }),
+    );
+    link.download = `zul-desk-relatorio-${days}-dias.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  return (
+    <div className="reports-page">
+      <section className="reports-hero">
+        <div>
+          <span className="eyebrow green">DESEMPENHO OPERACIONAL</span>
+          <h1>Relatórios da equipe</h1>
+          <p>Compare volume, conversão e produtividade dos atendimentos.</p>
+        </div>
+        <div className="reports-actions">
+          <div className="period-switch" aria-label="Período do relatório">
+            {[7, 30, 90].map((value) => (
+              <button
+                key={value}
+                className={days === value ? "active" : ""}
+                onClick={() => setDays(value)}
+              >
+                {value} dias
+              </button>
+            ))}
+          </div>
+          <button className="outline" onClick={exportCSV} disabled={!data}>
+            <FileText size={15} /> Exportar CSV
+          </button>
+        </div>
+      </section>
+
+      {error && <div className="error">{error}</div>}
+      {loading && (
+        <div className="report-loading">
+          <RefreshCw /> Gerando relatório...
+        </div>
+      )}
+      {!loading && data && (
+        <>
+          <div className="report-metrics">
+            {cards.map(([label, value, hint]) => (
+              <article key={String(label)}>
+                <span>{label}</span>
+                <b>{value}</b>
+                <small>{hint}</small>
+              </article>
+            ))}
+          </div>
+
+          <div className="report-grid">
+            <section className="report-card daily-card">
+              <div className="report-card-title">
+                <div>
+                  <h3>Evolução diária</h3>
+                  <p>Iniciadas, encerradas e vendas por dia</p>
+                </div>
+                <div className="chart-legend">
+                  <span>
+                    <i className="started" /> Iniciadas
+                  </span>
+                  <span>
+                    <i className="closed" /> Encerradas
+                  </span>
+                  <span>
+                    <i className="sales" /> Vendas
+                  </span>
+                </div>
+              </div>
+              <div className="daily-chart-scroll">
+                <div
+                  className="daily-chart"
+                  style={{ minWidth: Math.max(620, data.daily.length * 22) }}
+                >
+                  {data.daily.map((item) => (
+                    <div
+                      className="daily-column"
+                      key={item.day}
+                      title={`${item.day}: ${item.started} iniciadas, ${item.closed} encerradas, ${item.sales} vendas`}
+                    >
+                      <div className="daily-bars">
+                        <i
+                          className="started"
+                          style={{
+                            height: `${(Number(item.started) / dailyMax) * 100}%`,
+                          }}
+                        />
+                        <i
+                          className="closed"
+                          style={{
+                            height: `${(Number(item.closed) / dailyMax) * 100}%`,
+                          }}
+                        />
+                        <i
+                          className="sales"
+                          style={{
+                            height: `${(Number(item.sales) / dailyMax) * 100}%`,
+                          }}
+                        />
+                      </div>
+                      <span>
+                        {new Date(item.day).toLocaleDateString("pt-BR", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          timeZone: "UTC",
+                        })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="report-card results-card">
+              <div className="report-card-title">
+                <div>
+                  <h3>Resultados</h3>
+                  <p>Motivos de encerramento</p>
+                </div>
+              </div>
+              <div className="result-list">
+                {data.results.length === 0 && (
+                  <p className="empty-report">Nenhum atendimento encerrado.</p>
+                )}
+                {data.results.map((item) => {
+                  const total = Math.max(
+                    1,
+                    Number(summary.conversations_closed || 0),
+                  );
+                  const percent = Math.round(
+                    (Number(item.total) / total) * 100,
+                  );
+                  return (
+                    <div key={item.result}>
+                      <span>{resultLabels[item.result] || item.result}</span>
+                      <b>{item.total}</b>
+                      <div>
+                        <i style={{ width: `${percent}%` }} />
+                      </div>
+                      <small>{percent}%</small>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="message-volume">
+                <span>
+                  <b>{summary.inbound_messages || 0}</b> recebidas
+                </span>
+                <span>
+                  <b>{summary.outbound_messages || 0}</b> enviadas
+                </span>
+              </div>
+            </section>
+          </div>
+
+          <section className="report-card team-report">
+            <div className="report-card-title">
+              <div>
+                <h3>Desempenho por atendente</h3>
+                <p>Indicadores individuais no período selecionado</p>
+              </div>
+            </div>
+            <div className="report-table">
+              <div className="report-table-head">
+                <span>Atendente</span>
+                <span>Contatos</span>
+                <span>Encerrados</span>
+                <span>Vendas</span>
+                <span>Conversão</span>
+                <span>Em andamento</span>
+              </div>
+              {data.agents.map((agent) => (
+                <div className="report-table-row" key={agent.id}>
+                  <div>
+                    <span className="avatar">{initials(agent.name)}</span>
+                    <b>{agent.name}</b>
+                  </div>
+                  <span>{agent.contacts}</span>
+                  <span>{agent.closed}</span>
+                  <span className="sales-value">{agent.sales}</span>
+                  <span>{agent.conversion_rate}%</span>
+                  <span>{agent.open_now}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SettingsView({
   user,
   branding,
@@ -1722,6 +2030,8 @@ function TemplatesView({ embedded = false }: { embedded?: boolean }) {
 function WhatsAppAccountsView() {
   const [items, setItems] = useState<WhatsAppAccount[]>([]),
     [modal, setModal] = useState(false),
+    [tokenAccount, setTokenAccount] = useState<WhatsAppAccount | null>(null),
+    [tokenValue, setTokenValue] = useState(""),
     [busy, setBusy] = useState(""),
     [message, setMessage] = useState(""),
     [error, setError] = useState("");
@@ -1732,7 +2042,7 @@ function WhatsAppAccountsView() {
     display_phone_number: "",
     access_token: "",
     api_version: "v23.0",
-    coexistence: true,
+    coexistence: false,
   });
   const load = useCallback(
     () =>
@@ -1761,7 +2071,7 @@ function WhatsAppAccountsView() {
         display_phone_number: "",
         access_token: "",
         api_version: "v23.0",
-        coexistence: true,
+        coexistence: false,
       });
       await load();
       setMessage(
@@ -1791,6 +2101,26 @@ function WhatsAppAccountsView() {
           ? "Conexão validada com a Meta."
           : `${String(result.synced || 0)} registros sincronizados.`,
       );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+  async function updateToken(e: FormEvent) {
+    e.preventDefault();
+    if (!tokenAccount || !tokenValue.trim()) return;
+    setBusy("token");
+    setError("");
+    try {
+      await api(`/whatsapp/accounts/${tokenAccount.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ access_token: tokenValue.trim() }),
+      });
+      setTokenAccount(null);
+      setTokenValue("");
+      await load();
+      setMessage("Token atualizado. Teste novamente a conexão com a Meta.");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -1882,6 +2212,16 @@ function WhatsAppAccountsView() {
               >
                 <FileText /> Templates
               </button>
+              <button
+                className="outline"
+                onClick={() => {
+                  setTokenAccount(a);
+                  setTokenValue("");
+                }}
+                disabled={busy !== ""}
+              >
+                <LockKeyhole /> Atualizar token
+              </button>
             </div>
           </article>
         ))}
@@ -1960,15 +2300,15 @@ function WhatsAppAccountsView() {
                   required
                   type="password"
                   autoComplete="off"
-                  placeholder="Token permanente de usuário do sistema"
+                  placeholder="Token temporário ou permanente da Meta"
                   value={form.access_token}
                   onChange={(e) =>
                     setForm({ ...form, access_token: e.target.value })
                   }
                 />
                 <small>
-                  O token será criptografado no backend e nunca retornará à
-                  interface.
+                  Tokens temporários servem para teste. O token será
+                  criptografado e nunca retornará à interface.
                 </small>
               </label>
               <label className="check-label wide">
@@ -1995,6 +2335,55 @@ function WhatsAppAccountsView() {
               <button className="primary" disabled={busy === "create"}>
                 <Plus />
                 {busy === "create" ? "Salvando…" : "Cadastrar número"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {tokenAccount && (
+        <div className="modal-backdrop">
+          <form className="modal action-modal" onSubmit={updateToken}>
+            <div className="modal-head">
+              <div>
+                <span className="eyebrow green">CREDENCIAL DA META</span>
+                <h3>Atualizar token</h3>
+                <p>{tokenAccount.name}</p>
+              </div>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setTokenAccount(null)}
+              >
+                <X />
+              </button>
+            </div>
+            <div className="notice coexistence">
+              <ShieldCheck />
+              <div>
+                <b>O token é protegido no servidor</b>
+                <span>
+                  Use esta opção quando o token temporário da Meta expirar.
+                </span>
+              </div>
+            </div>
+            <label>
+              Novo Access Token
+              <input
+                required
+                type="password"
+                autoComplete="off"
+                placeholder="Cole o novo token da Meta"
+                value={tokenValue}
+                onChange={(e) => setTokenValue(e.target.value)}
+              />
+            </label>
+            <div className="modal-foot">
+              <span>
+                <LockKeyhole /> A credencial atual não será exibida
+              </span>
+              <button className="primary" disabled={busy === "token"}>
+                <Check />
+                {busy === "token" ? "Atualizando…" : "Salvar novo token"}
               </button>
             </div>
           </form>

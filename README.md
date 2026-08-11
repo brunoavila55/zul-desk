@@ -17,6 +17,7 @@ Central de atendimento multiusuário para WhatsApp Business, construída para eq
 - Cadastro e importação de clientes, opt-in, opt-out, notas e histórico.
 - Personalização white label de nome, empresa, logotipo e favicon.
 - Dashboard operacional e atualizações por WebSocket.
+- Relatórios de 7, 30 e 90 dias com conversão, produtividade, evolução diária e exportação CSV.
 
 ## Tecnologias
 
@@ -66,6 +67,40 @@ Para também apagar os dados locais do PostgreSQL, as mídias e a identidade vis
 docker compose down -v
 ```
 
+### Servidor de testes
+
+Em um servidor Linux com Docker e Docker Compose instalados:
+
+```bash
+git clone https://github.com/brunoavila55/zul-desk.git
+cd zul-desk
+cp .env.example .env
+# Edite o .env antes de iniciar.
+docker compose up --build -d
+docker compose ps
+```
+
+No `.env`, defina `APP_ENV=production`, troque `POSTGRES_PASSWORD`, ajuste a mesma senha dentro de `DATABASE_URL` e gere valores longos e diferentes para `JWT_SECRET` e `CREDENTIAL_ENCRYPTION_KEY`.
+
+Para um teste apenas por IP e HTTP, mantenha `APP_DOMAIN=:80`, escolha a porta pública em `HTTP_PORT` e acesse `http://IP-DO-SERVIDOR:PORTA`. Para usar um domínio com HTTPS automático, aponte o DNS para o servidor e configure:
+
+```env
+APP_DOMAIN=desk.seudominio.com
+HTTP_PORT=80
+HTTPS_PORT=443
+CORS_ORIGIN=https://desk.seudominio.com
+```
+
+As portas 80 e 443 devem estar liberadas no firewall. O Caddy obtém e renova o certificado automaticamente. HTTPS público é obrigatório para receber webhooks da Meta; nesse caso, use `https://desk.seudominio.com/api/webhooks/whatsapp`.
+
+Comandos úteis no servidor:
+
+```bash
+docker compose logs -f --tail=200
+docker compose pull
+docker compose up --build -d
+```
+
 ## Configuração
 
 As variáveis disponíveis estão documentadas em [`.env.example`](.env.example). Antes de usar em produção, altere obrigatoriamente:
@@ -79,6 +114,10 @@ WHATSAPP_MOCK=false
 As credenciais de cada número podem ser cadastradas em **Configurações > Números WhatsApp**. O token é criptografado com AES-256-GCM e nunca é devolvido pela API ou enviado ao navegador.
 
 ## Meta WhatsApp Cloud API
+
+### Número de teste da Meta
+
+O número gratuito fornecido na etapa **Experimente** pode ser cadastrado no Zul Desk com o WABA ID, Phone Number ID e token temporário exibidos pela Meta. Deixe **Usar coexistência** desmarcado, adicione até cinco destinatários verificados no painel da Meta, sincronize o template `hello_world` e use-o para iniciar o primeiro contato. Tokens temporários podem ser renovados em **Configurações > Números WhatsApp > Atualizar token**.
 
 Para conectar um número:
 
@@ -181,6 +220,7 @@ docker run --rm -v "${PWD}/backend:/src" -w /src sqlc/sqlc generate
 - Mensagens, mídias, notas, atribuição e encerramento em subrotas de conversas
 - `GET /api/templates`
 - `GET /api/dashboard`
+- `GET /api/reports?days=7|30|90` para supervisores e administradores
 - `GET|POST|PATCH /api/users`
 - `GET|POST|PATCH /api/groups`
 - `GET|POST /api/webhooks/whatsapp`

@@ -56,7 +56,7 @@ CREATE TABLE webhook_events (
   id TEXT PRIMARY KEY, payload JSONB NOT NULL, processed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- senha local: comercial123 (o bootstrap troca este hash pela implementação Argon2 no primeiro start)
+-- senha local: comercial123 (o bootstrap troca este marcador por um hash bcrypt no primeiro start)
 INSERT INTO users (name, email, password_hash, role) VALUES
 ('Ana Martins', 'admin@newlife.local', '$bootstrap$', 'ADMIN'),
 ('Carlos Lima', 'carlos@newlife.local', '$bootstrap$', 'AGENT'),

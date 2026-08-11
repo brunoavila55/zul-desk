@@ -83,6 +83,8 @@ docker compose ps
 
 No `.env`, defina `APP_ENV=production`, troque `POSTGRES_PASSWORD`, ajuste a mesma senha dentro de `DATABASE_URL` e gere valores longos e diferentes para `JWT_SECRET` e `CREDENTIAL_ENCRYPTION_KEY`.
 
+Também defina `DEMO_MODE=false` e escolha uma senha inicial forte em `BOOTSTRAP_ADMIN_PASSWORD`. Em produção, a API recusa a inicialização com segredos curtos, iguais ou com a senha de demonstração.
+
 Para um teste apenas por IP e HTTP, mantenha `APP_DOMAIN=:80`, escolha a porta pública em `HTTP_PORT` e acesse `http://IP-DO-SERVIDOR:PORTA`. Para usar um domínio com HTTPS automático, aponte o DNS para o servidor e configure:
 
 ```env
@@ -230,11 +232,14 @@ docker run --rm -v "${PWD}/backend:/src" -w /src sqlc/sqlc generate
 ## Segurança para produção
 
 - Use segredos longos e diferentes para JWT e criptografia de credenciais.
+- Configure `DEMO_MODE=false` e uma senha inicial exclusiva para o administrador.
 - Nunca envie o arquivo `.env` ao repositório.
 - Troque ou remova os usuários de demonstração.
 - Use HTTPS no proxy público.
 - Restrinja o banco e o Redis à rede interna.
 - Configure backups para PostgreSQL e volumes de mídia.
+
+As migrações são executadas automaticamente pela API e registradas em `schema_migrations`, inclusive quando um volume PostgreSQL existente recebe uma atualização do aplicativo.
 
 ## Escopo atual
 

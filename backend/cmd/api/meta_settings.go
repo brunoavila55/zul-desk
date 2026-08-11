@@ -55,6 +55,7 @@ func webhookCallbackURL(r *http.Request) string {
 }
 
 func (a *app) getWhatsAppSettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if !requireAdmin(w, r) {
 		return
 	}
@@ -67,6 +68,7 @@ func (a *app) getWhatsAppSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) updateWhatsAppSettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if !requireAdmin(w, r) {
 		return
 	}

@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/brunoavila55/zul-desk/database/migrations"
 	"github.com/brunoavila55/zul-desk/internal/config"
 	"github.com/brunoavila55/zul-desk/internal/jobs"
 	"github.com/brunoavila55/zul-desk/internal/secure"
@@ -41,13 +42,19 @@ const userKey ctxKey = "user"
 
 type identity struct{ ID, Name, Email, Role string }
 type app struct {
-	cfg   config.Config
-	db    *pgxpool.Pool
-	queue *asynq.Client
-	log   *slog.Logger
-	hub   *hub
-	vault *secure.Vault
-	wa    *whatsapp.Client
+	cfg           config.Config
+	db            *pgxpool.Pool
+	queue         *asynq.Client
+	log           *slog.Logger
+	hub           *hub
+	vault         *secure.Vault
+	wa            *whatsapp.Client
+	loginMu       sync.Mutex
+	loginAttempts map[string]loginAttempt
+}
+type loginAttempt struct {
+	Count int
+	Reset time.Time
 }
 type hub struct {
 	mu      sync.RWMutex
@@ -69,6 +76,10 @@ func (h *hub) publish(v any) {
 func main() {
 	cfg := config.Load()
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := config.Validate(cfg); err != nil {
+		log.Error("invalid_configuration", "error", err)
+		os.Exit(1)
+	}
 	ctx := context.Background()
 	db, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -82,7 +93,11 @@ func main() {
 		}
 		time.Sleep(time.Second)
 	}
-	bootstrapPassword(ctx, db, log)
+	if err := migrations.Run(ctx, db); err != nil {
+		log.Error("database_migration_failed", "error", err)
+		os.Exit(1)
+	}
+	bootstrapPassword(ctx, db, log, cfg)
 	if err := os.MkdirAll(cfg.UploadDir, 0755); err != nil {
 		log.Error("upload_directory_failed", "error", err)
 		os.Exit(1)
@@ -91,7 +106,7 @@ func main() {
 		log.Error("media_directory_failed", "error", err)
 		os.Exit(1)
 	}
-	a := &app{cfg: cfg, db: db, queue: asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr}), log: log, hub: newHub(), vault: secure.NewVault(cfg.CredentialEncryptionKey), wa: whatsapp.New(cfg)}
+	a := &app{cfg: cfg, db: db, queue: asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr}), log: log, hub: newHub(), vault: secure.NewVault(cfg.CredentialEncryptionKey), wa: whatsapp.New(cfg), loginAttempts: map[string]loginAttempt{}}
 	if err := a.ensureMetaSettingsSchema(ctx); err != nil {
 		log.Error("whatsapp_settings_schema_failed", "error", err)
 		os.Exit(1)
@@ -156,8 +171,16 @@ func main() {
 	}
 }
 
-func bootstrapPassword(ctx context.Context, db *pgxpool.Pool, log *slog.Logger) {
-	h, _ := bcrypt.GenerateFromPassword([]byte("comercial123"), bcrypt.DefaultCost)
+func bootstrapPassword(ctx context.Context, db *pgxpool.Pool, log *slog.Logger, cfg config.Config) {
+	password := cfg.BootstrapAdminPassword
+	if password == "" && cfg.AppEnv != "production" {
+		password = "comercial123"
+	}
+	if password == "" {
+		log.Warn("bootstrap_password_not_configured")
+		return
+	}
+	h, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	tag, err := db.Exec(ctx, "UPDATE users SET password_hash=$1 WHERE password_hash='$bootstrap$'", string(h))
 	if err == nil && tag.RowsAffected() > 0 {
 		log.Info("development_users_bootstrapped", "count", tag.RowsAffected())
@@ -231,6 +254,11 @@ func (a *app) tokens(u identity) (string, string, error) {
 	return access, refresh, e
 }
 func (a *app) login(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if !a.allowLogin(r.RemoteAddr) {
+		fail(w, http.StatusTooManyRequests, "muitas tentativas; aguarde alguns minutos")
+		return
+	}
 	var in struct{ Email, Password string }
 	if decode(r, &in) != nil {
 		fail(w, 400, "dados inválidos")
@@ -243,6 +271,7 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 		fail(w, 401, "e-mail ou senha inválidos")
 		return
 	}
+	a.clearLoginAttempts(r.RemoteAddr)
 	access, refresh, err := a.tokens(u)
 	if err != nil {
 		fail(w, 500, "não foi possível iniciar a sessão")
@@ -251,7 +280,25 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	a.audit(r, u.ID, "LOGIN", "user", u.ID, nil)
 	write(w, 200, map[string]any{"access_token": access, "refresh_token": refresh, "expires_in": 900, "user": u})
 }
+func (a *app) allowLogin(address string) bool {
+	now := time.Now()
+	a.loginMu.Lock()
+	defer a.loginMu.Unlock()
+	attempt := a.loginAttempts[address]
+	if attempt.Reset.Before(now) {
+		attempt = loginAttempt{Reset: now.Add(15 * time.Minute)}
+	}
+	attempt.Count++
+	a.loginAttempts[address] = attempt
+	return attempt.Count <= 10
+}
+func (a *app) clearLoginAttempts(address string) {
+	a.loginMu.Lock()
+	delete(a.loginAttempts, address)
+	a.loginMu.Unlock()
+}
 func (a *app) refresh(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	var in struct {
 		RefreshToken string `json:"refresh_token"`
 	}

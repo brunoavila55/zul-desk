@@ -219,11 +219,22 @@ export default function Page() {
   const [branding, setBranding] = useState<Branding>(defaultBranding);
   useEffect(() => {
     const raw = localStorage.getItem("user");
-    if (raw && token()) setUser(JSON.parse(raw));
+    if (raw && token()) {
+      try {
+        setUser(JSON.parse(raw));
+      } catch {
+        void logout();
+      }
+    }
     api<Branding>("/public/branding")
       .then(setBranding)
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, []);
+  useEffect(() => {
+    const expire = () => setUser(null);
+    window.addEventListener("zuldesk:auth-expired", expire);
+    return () => window.removeEventListener("zuldesk:auth-expired", expire);
   }, []);
   useEffect(() => {
     document.title = branding.app_name;
@@ -267,8 +278,9 @@ function Login({
   branding: Branding;
   onLogin: (u: User) => void;
 }) {
-  const [email, setEmail] = useState("carlos@newlife.local"),
-    [password, setPassword] = useState("comercial123"),
+  const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE !== "false";
+  const [email, setEmail] = useState(demoMode ? "carlos@newlife.local" : ""),
+    [password, setPassword] = useState(demoMode ? "comercial123" : ""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   async function submit(e: FormEvent) {
@@ -339,14 +351,16 @@ function Login({
           <button className="primary full" disabled={busy}>
             {busy ? "Entrando…" : "Entrar na plataforma"}
           </button>
-          <div className="demo-hint">
-            <LockKeyhole size={15} />
-            <span>
-              Ambiente de demonstração
-              <br />
-              <b>Senha: comercial123</b>
-            </span>
-          </div>
+          {demoMode && (
+            <div className="demo-hint">
+              <LockKeyhole size={15} />
+              <span>
+                Ambiente de demonstração
+                <br />
+                <b>Senha: comercial123</b>
+              </span>
+            </div>
+          )}
         </form>
       </section>
     </main>
@@ -372,11 +386,29 @@ function App({
     const base = (process.env.NEXT_PUBLIC_API_URL || location.origin + "/api")
       .replace(/^http/, "ws")
       .replace(/\/api$/, "");
-    const ws = new WebSocket(`${base}/ws?token=${token()}`);
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onmessage = () => setTick((x) => x + 1);
-    return () => ws.close();
+    let ws: WebSocket | null = null;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
+    const connect = () => {
+      if (stopped) return;
+      ws = new WebSocket(`${base}/ws?token=${token()}`);
+      ws.onopen = () => setConnected(true);
+      ws.onmessage = () => setTick((x) => x + 1);
+      ws.onclose = () => {
+        setConnected(false);
+        if (!stopped) {
+          void api<User>("/auth/me").finally(() => {
+            if (!stopped) retry = setTimeout(connect, 2000);
+          });
+        }
+      };
+    };
+    connect();
+    return () => {
+      stopped = true;
+      if (retry) clearTimeout(retry);
+      ws?.close();
+    };
   }, []);
   const nav = [
     { id: "dashboard", label: "Visão geral", icon: LayoutDashboard },

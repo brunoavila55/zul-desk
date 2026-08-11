@@ -30,3 +30,20 @@ func TestTemplateParameterCount(t *testing.T) {
 		})
 	}
 }
+
+func TestLoginAttemptLimit(t *testing.T) {
+	t.Parallel()
+	a := &app{loginAttempts: map[string]loginAttempt{}}
+	for i := 0; i < 10; i++ {
+		if !a.allowLogin("192.0.2.10") {
+			t.Fatalf("attempt %d should be allowed", i+1)
+		}
+	}
+	if a.allowLogin("192.0.2.10") {
+		t.Fatal("eleventh attempt should be blocked")
+	}
+	a.clearLoginAttempts("192.0.2.10")
+	if !a.allowLogin("192.0.2.10") {
+		t.Fatal("successful login should reset the limiter")
+	}
+}

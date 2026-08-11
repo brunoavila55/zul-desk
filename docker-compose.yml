@@ -13,7 +13,6 @@ services:
       retries: 10
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/database/migrations:/docker-entrypoint-initdb.d:ro
 
   redis:
     image: redis:7-alpine
@@ -58,7 +57,10 @@ services:
       - media_data:/app/data/media
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_DEMO_MODE: ${DEMO_MODE:-true}
     restart: unless-stopped
     init: true
     environment:

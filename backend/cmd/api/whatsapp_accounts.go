@@ -45,6 +45,11 @@ func (a *app) createWhatsAppAccount(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "nome, WABA ID, Phone Number ID e token são obrigatórios")
 		return
 	}
+	in.Name = strings.TrimSpace(in.Name)
+	in.WABAID = strings.TrimSpace(in.WABAID)
+	in.PhoneNumberID = strings.TrimSpace(in.PhoneNumberID)
+	in.DisplayPhoneNumber = strings.TrimSpace(in.DisplayPhoneNumber)
+	in.AccessToken = strings.TrimSpace(in.AccessToken)
 	if in.APIVersion == "" {
 		in.APIVersion = a.cfg.WhatsAppAPIVersion
 	}
@@ -105,6 +110,10 @@ func (a *app) updateWhatsAppAccount(w http.ResponseWriter, r *http.Request) {
 		active=COALESCE($7,active),coexistence=COALESCE($8,coexistence),
 		onboarding_type=CASE WHEN COALESCE($8,coexistence) THEN 'COEXISTENCE' ELSE 'CLOUD_API' END,
 		api_version=COALESCE(NULLIF($9,''),api_version),updated_at=now() WHERE id=$1`, id, in.Name, in.WABAID, in.PhoneNumberID, in.DisplayPhoneNumber, encrypted, in.Active, in.Coexistence, in.APIVersion)
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unique") {
+		fail(w, http.StatusConflict, "este Phone Number ID já está cadastrado")
+		return
+	}
 	if err != nil || tag.RowsAffected() == 0 {
 		fail(w, 404, "número não encontrado")
 		return

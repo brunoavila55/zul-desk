@@ -17,4 +17,4 @@ sqlc:
 	docker run --rm -v "$(PWD)/backend:/src" -w /src sqlc/sqlc generate
 
 migrate:
-	docker compose run --rm migrate
+	docker compose up -d postgres redis backend

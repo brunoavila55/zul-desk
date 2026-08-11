@@ -18,6 +18,10 @@ import (
 func main() {
 	cfg := config.Load()
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := config.Validate(cfg); err != nil {
+		log.Error("invalid_configuration", "error", err)
+		os.Exit(1)
+	}
 	ctx := context.Background()
 	db, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
